@@ -62,11 +62,28 @@ SoftProjector::SoftProjector(QWidget *parent)
     mediaControls = new MediaControl(this);
 
     // Initialize DeckLink device discovery
+    // This will fail gracefully if DeckLink drivers are not installed
     deckLinkDiscovery = new DeckLinkDiscovery(this);
-    if (deckLinkDiscovery->initialize())
+    try {
+        if (deckLinkDiscovery->initialize())
+        {
+            deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+            if (deckLinkDevices.count() > 0)
+            {
+                qDebug() << "Found" << deckLinkDevices.count() << "DeckLink devices";
+            }
+        }
+        else
+        {
+            // DeckLink drivers not available - this is OK, continue without DeckLink
+            deckLinkDevices.clear();
+        }
+    }
+    catch (...)
     {
-        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
-        qDebug() << "Found" << deckLinkDevices.count() << "DeckLink devices";
+        // If initialization fails for any reason, continue without DeckLink
+        qDebug() << "DeckLink initialization failed, continuing without DeckLink support";
+        deckLinkDevices.clear();
     }
 
     ui->setupUi(this);
@@ -252,15 +269,32 @@ void SoftProjector::positionDisplayWindow()
     int screen_count = screens.count();
 
     // Add DeckLink devices to the screen list (as virtual screens)
-    if (deckLinkDiscovery && deckLinkDiscovery->isInitialized())
-    {
-        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
-        screen_count += deckLinkDevices.count();
-        qDebug() << "Screen Count (including DeckLink): " << screen_count << "(" << screens.count() << "regular +" << deckLinkDevices.count() << "DeckLink)";
+    // Safely check if DeckLink is available
+    try {
+        if (deckLinkDiscovery && deckLinkDiscovery->isInitialized())
+        {
+            deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+            if (!deckLinkDevices.isEmpty())
+            {
+                screen_count += deckLinkDevices.count();
+                qDebug() << "Screen Count (including DeckLink): " << screen_count << "(" << screens.count() << "regular +" << deckLinkDevices.count() << "DeckLink)";
+            }
+            else
+            {
+                qDebug() << "Screen Count: " << screen_count << "(DeckLink initialized but no devices found)";
+            }
+        }
+        else
+        {
+            deckLinkDevices.clear(); // Ensure it's empty if not initialized
+            qDebug() << "Screen Count: " << screen_count << "(DeckLink not available)";
+        }
     }
-    else
+    catch (...)
     {
-        qDebug()<< "Screen Count: " << screen_count;
+        // If any error occurs, just use regular screens
+        deckLinkDevices.clear();
+        qDebug() << "Screen Count: " << screen_count << "(DeckLink error, using regular screens only)";
     }
 
     // Validate and correct display screen indices if they are out of bounds
@@ -285,25 +319,51 @@ void SoftProjector::positionDisplayWindow()
     {
 
         // Check if the selected display is a DeckLink device
+        // Safely check bounds and DeckLink availability
         if (mySettings.general.displayScreen >= screens.count() && !deckLinkDevices.isEmpty())
         {
-            // This is a DeckLink device
+            // This might be a DeckLink device
             int deckLinkIndex = mySettings.general.displayScreen - screens.count();
             if (deckLinkIndex >= 0 && deckLinkIndex < deckLinkDevices.count())
             {
-                pds1->setGeometry(deckLinkDevices.at(deckLinkIndex).geometry);
-                qDebug() << "Using DeckLink device:" << deckLinkDevices.at(deckLinkIndex).modelName;
+                try {
+                    pds1->setGeometry(deckLinkDevices.at(deckLinkIndex).geometry);
+                    qDebug() << "Using DeckLink device:" << deckLinkDevices.at(deckLinkIndex).modelName;
+                }
+                catch (...)
+                {
+                    // If DeckLink geometry fails, fall back to first regular screen
+                    if (!screens.isEmpty())
+                    {
+                        pds1->setGeometry(screens.at(0)->geometry());
+                    }
+                }
             }
             else
             {
                 // Invalid DeckLink index, fall back to first regular screen
-                pds1->setGeometry(screens.at(0)->geometry());
+                if (!screens.isEmpty() && mySettings.general.displayScreen < screens.count())
+                {
+                    pds1->setGeometry(screens.at(mySettings.general.displayScreen)->geometry());
+                }
+                else if (!screens.isEmpty())
+                {
+                    pds1->setGeometry(screens.at(0)->geometry());
+                }
             }
         }
         else
         {
-            // Regular screen
-            pds1->setGeometry(screens.at(mySettings.general.displayScreen)->geometry());
+            // Regular screen - check bounds
+            if (mySettings.general.displayScreen >= 0 && mySettings.general.displayScreen < screens.count())
+            {
+                pds1->setGeometry(screens.at(mySettings.general.displayScreen)->geometry());
+            }
+            else if (!screens.isEmpty())
+            {
+                // Invalid index, use first screen
+                pds1->setGeometry(screens.at(0)->geometry());
+            }
         }
 
         pds1->setCursor(Qt::BlankCursor); //Sets a Blank Mouse to the screen

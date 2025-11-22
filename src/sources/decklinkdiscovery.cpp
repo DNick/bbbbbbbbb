@@ -87,25 +87,58 @@ bool DeckLinkDiscovery::initialize()
     if (m_initialized)
         return true;
 
+    // Try to initialize COM, but don't fail if it's already initialized
     if (!initializeCOM())
     {
-        qDebug() << "Failed to initialize COM for DeckLink";
-        return false;
+        // COM initialization failed, but this might be OK if it's already initialized by another thread
+        // Continue anyway and try to create iterator
     }
 
     // Get the DeckLink iterator using COM
+    // This will fail gracefully if DeckLink drivers are not installed
     HRESULT result = CoCreateInstance(CLSID_CDeckLinkIterator, NULL, CLSCTX_ALL, IID_IDeckLinkIterator, (void**)&m_deckLinkIterator);
     
     if (result != S_OK)
     {
-        qDebug() << "Failed to create DeckLink iterator. DeckLink drivers may not be installed. Error:" << result;
-        shutdownCOM();
+        // DeckLink drivers are not installed or device is not available
+        // This is not an error - just means no DeckLink devices are available
+        qDebug() << "DeckLink drivers not available (this is OK if DeckLink hardware is not installed). Error code:" << QString::number(result, 16);
+        
+        // Clean up COM if we initialized it
+        if (m_comInitialized)
+        {
+            shutdownCOM();
+        }
+        
+        // Return false but don't treat this as a fatal error
+        m_initialized = false;
+        m_devices.clear();
         return false;
     }
 
-    enumerateDevices();
-    m_initialized = true;
-    return true;
+    // Successfully created iterator, now enumerate devices
+    try {
+        enumerateDevices();
+        m_initialized = true;
+        return true;
+    }
+    catch (...)
+    {
+        // If enumeration fails, clean up and continue without DeckLink
+        qDebug() << "Error enumerating DeckLink devices, continuing without DeckLink support";
+        if (m_deckLinkIterator)
+        {
+            m_deckLinkIterator->Release();
+            m_deckLinkIterator = nullptr;
+        }
+        if (m_comInitialized)
+        {
+            shutdownCOM();
+        }
+        m_initialized = false;
+        m_devices.clear();
+        return false;
+    }
 #else
     // DeckLink SDK is Windows-only
     return false;
@@ -115,10 +148,16 @@ bool DeckLinkDiscovery::initialize()
 void DeckLinkDiscovery::shutdown()
 {
 #ifdef Q_OS_WIN
-    if (m_deckLinkIterator)
+    try {
+        if (m_deckLinkIterator)
+        {
+            m_deckLinkIterator->Release();
+            m_deckLinkIterator = nullptr;
+        }
+    }
+    catch (...)
     {
-        m_deckLinkIterator->Release();
-        m_deckLinkIterator = nullptr;
+        // Ignore errors during shutdown
     }
 
     m_devices.clear();
@@ -150,10 +189,22 @@ bool DeckLinkDiscovery::initializeCOM()
         return true;
 
     HRESULT result = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    if (FAILED(result) && result != RPC_E_CHANGED_MODE)
+    if (FAILED(result))
     {
-        qDebug() << "Failed to initialize COM:" << result;
-        return false;
+        // RPC_E_CHANGED_MODE means COM was already initialized with different mode
+        // This is OK, we can still use COM
+        if (result == RPC_E_CHANGED_MODE)
+        {
+            // COM is already initialized, just mark it
+            m_comInitialized = true;
+            return true;
+        }
+        
+        // Other errors - log but don't fail completely
+        qDebug() << "COM initialization warning (may still work):" << result;
+        // Don't set m_comInitialized to true, but don't return false either
+        // Let the caller try to use COM anyway
+        return true;
     }
 
     m_comInitialized = true;
@@ -164,7 +215,13 @@ void DeckLinkDiscovery::shutdownCOM()
 {
     if (m_comInitialized)
     {
-        CoUninitialize();
+        try {
+            CoUninitialize();
+        }
+        catch (...)
+        {
+            // Ignore errors during COM uninitialization
+        }
         m_comInitialized = false;
     }
 }
@@ -175,6 +232,12 @@ void DeckLinkDiscovery::enumerateDevices()
         return;
 
     m_devices.clear();
+
+    // Safety check - if iterator is invalid, return empty list
+    if (!m_deckLinkIterator)
+    {
+        return;
+    }
 
     // Get base screen index (number of regular screens)
     int regularScreenCount = QApplication::screens().count();
@@ -198,55 +261,83 @@ void DeckLinkDiscovery::enumerateDevices()
     int deviceIndex = 0;
 
     // Enumerate all DeckLink devices
-    while (m_deckLinkIterator->Next(&deckLink) == S_OK)
-    {
-        DeckLinkDeviceInfo deviceInfo;
-        deviceInfo.deviceIndex = m_baseScreenIndex + deviceIndex;
-
-        // Get model name
-        BSTR modelNameBSTR = nullptr;
-        if (deckLink->GetModelName(&modelNameBSTR) == S_OK)
+    // Use try-catch to handle any COM errors gracefully
+    try {
+        while (m_deckLinkIterator && m_deckLinkIterator->Next(&deckLink) == S_OK)
         {
-            deviceInfo.modelName = QString::fromWCharArray(modelNameBSTR);
-            SysFreeString(modelNameBSTR);
-        }
+            if (!deckLink)
+                continue;
 
-        // Get display name
-        BSTR displayNameBSTR = nullptr;
-        if (deckLink->GetDisplayName(&displayNameBSTR) == S_OK)
-        {
-            deviceInfo.displayName = QString::fromWCharArray(displayNameBSTR);
-            SysFreeString(displayNameBSTR);
-        }
+            DeckLinkDeviceInfo deviceInfo;
+            deviceInfo.deviceIndex = m_baseScreenIndex + deviceIndex;
+            deviceInfo.supportsPlayback = false; // Default value
 
-        // Check if device supports playback (output)
-        IUnknown* unknown = nullptr;
-        if (deckLink->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&unknown) == S_OK)
-        {
-            IDeckLinkProfileAttributes* attributes = (IDeckLinkProfileAttributes*)unknown;
-            int64_t videoIOSupport = 0;
-            int64_t videoIOSupportAttr = 0x6F747469; // BMDDeckLinkVideoIOSupport
-            if (attributes->GetInt(videoIOSupportAttr, &videoIOSupport) == S_OK)
+            // Get model name
+            BSTR modelNameBSTR = nullptr;
+            if (deckLink->GetModelName(&modelNameBSTR) == S_OK && modelNameBSTR)
             {
-                deviceInfo.supportsPlayback = (videoIOSupport & 0x00000001) != 0; // bmdDeviceSupportsPlayback
+                deviceInfo.modelName = QString::fromWCharArray(modelNameBSTR);
+                SysFreeString(modelNameBSTR);
             }
-            attributes->Release();
+            else
+            {
+                deviceInfo.modelName = QString("DeckLink Device %1").arg(deviceIndex + 1);
+            }
+
+            // Get display name
+            BSTR displayNameBSTR = nullptr;
+            if (deckLink->GetDisplayName(&displayNameBSTR) == S_OK && displayNameBSTR)
+            {
+                deviceInfo.displayName = QString::fromWCharArray(displayNameBSTR);
+                SysFreeString(displayNameBSTR);
+            }
+            else
+            {
+                deviceInfo.displayName = deviceInfo.modelName;
+            }
+
+            // Check if device supports playback (output)
+            IUnknown* unknown = nullptr;
+            if (deckLink->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&unknown) == S_OK)
+            {
+                IDeckLinkProfileAttributes* attributes = (IDeckLinkProfileAttributes*)unknown;
+                if (attributes)
+                {
+                    int64_t videoIOSupport = 0;
+                    int64_t videoIOSupportAttr = 0x6F747469; // BMDDeckLinkVideoIOSupport
+                    if (attributes->GetInt(videoIOSupportAttr, &videoIOSupport) == S_OK)
+                    {
+                        deviceInfo.supportsPlayback = (videoIOSupport & 0x00000001) != 0; // bmdDeviceSupportsPlayback
+                    }
+                    attributes->Release();
+                }
+            }
+
+            // Set virtual geometry (1920x1080 default, positioned after regular screens)
+            deviceInfo.geometry = QRect(virtualX + deviceIndex * 100, virtualY, 1920, 1080);
+
+            m_devices.append(deviceInfo);
+
+            qDebug() << "Found DeckLink device:" << deviceInfo.modelName << deviceInfo.displayName 
+                     << "Index:" << deviceInfo.deviceIndex << "Supports Playback:" << deviceInfo.supportsPlayback;
+
+            deckLink->Release();
+            deckLink = nullptr;
+            deviceIndex++;
         }
 
-        // Set virtual geometry (1920x1080 default, positioned after regular screens)
-        deviceInfo.geometry = QRect(virtualX + deviceIndex * 100, virtualY, 1920, 1080);
-
-        m_devices.append(deviceInfo);
-
-        qDebug() << "Found DeckLink device:" << deviceInfo.modelName << deviceInfo.displayName 
-                 << "Index:" << deviceInfo.deviceIndex << "Supports Playback:" << deviceInfo.supportsPlayback;
-
-        deckLink->Release();
-        deviceIndex++;
+        // Reset iterator for next enumeration (if still valid)
+        if (m_deckLinkIterator)
+        {
+            m_deckLinkIterator->Reset();
+        }
     }
-
-    // Reset iterator for next enumeration
-    m_deckLinkIterator->Reset();
+    catch (...)
+    {
+        // If any error occurs during enumeration, just return empty list
+        qDebug() << "Error during DeckLink device enumeration, continuing without DeckLink devices";
+        m_devices.clear();
+    }
 }
 #endif
 

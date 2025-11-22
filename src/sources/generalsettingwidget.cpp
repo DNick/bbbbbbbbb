@@ -29,10 +29,23 @@ GeneralSettingWidget::GeneralSettingWidget(QWidget *parent) :
     ui->setupUi(this);
     
     // Initialize DeckLink device discovery
+    // This will fail gracefully if DeckLink drivers are not installed
     deckLinkDiscovery = new DeckLinkDiscovery(this);
-    if (deckLinkDiscovery->initialize())
+    try {
+        if (deckLinkDiscovery->initialize())
+        {
+            deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+        }
+        else
+        {
+            // DeckLink drivers not available - this is OK, continue without DeckLink
+            deckLinkDevices.clear();
+        }
+    }
+    catch (...)
     {
-        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+        // If initialization fails for any reason, continue without DeckLink
+        deckLinkDevices.clear();
     }
 }
 
@@ -92,18 +105,33 @@ void GeneralSettingWidget::loadSettings()
     }
 
     // Add DeckLink devices to the list
-    if (deckLinkDiscovery && deckLinkDiscovery->isInitialized())
-    {
-        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
-        for (const DeckLinkDeviceInfo &device : deckLinkDevices)
+    // Safely check if DeckLink is available
+    try {
+        if (deckLinkDiscovery && deckLinkDiscovery->isInitialized())
         {
-            if (device.supportsPlayback)
+            deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+            if (!deckLinkDevices.isEmpty())
             {
-                monitors << QString("%1 - %2 (DeckLink)").arg(i).arg(device.modelName);
-                ++i;
+                for (const DeckLinkDeviceInfo &device : deckLinkDevices)
+                {
+                    if (device.supportsPlayback)
+                    {
+                        monitors << QString("%1 - %2 (DeckLink)").arg(i).arg(device.modelName);
+                        ++i;
+                    }
+                }
+                screen_count += deckLinkDevices.count();
             }
         }
-        screen_count += deckLinkDevices.count();
+        else
+        {
+            deckLinkDevices.clear(); // Ensure it's empty if not initialized
+        }
+    }
+    catch (...)
+    {
+        // If any error occurs, just continue without DeckLink devices
+        deckLinkDevices.clear();
     }
 
     if(screen_count>1)
