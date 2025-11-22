@@ -22,6 +22,7 @@
 #include "ui_softprojector.h"
 #include "../headers/aboutdialog.hpp"
 #include "../headers/editannouncementdialog.hpp"
+#include "../headers/decklinkdiscovery.hpp"
 
 SoftProjector::SoftProjector(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::SoftProjectorClass)
@@ -59,6 +60,14 @@ SoftProjector::SoftProjector(QWidget *parent)
     pictureWidget = new PictureWidget;
     mediaPlayer = new MediaWidget;
     mediaControls = new MediaControl(this);
+
+    // Initialize DeckLink device discovery
+    deckLinkDiscovery = new DeckLinkDiscovery(this);
+    if (deckLinkDiscovery->initialize())
+    {
+        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+        qDebug() << "Found" << deckLinkDevices.count() << "DeckLink devices";
+    }
 
     ui->setupUi(this);
 
@@ -210,6 +219,11 @@ SoftProjector::~SoftProjector()
     delete shSart1;
     delete shSart2;
     delete helpDialog;
+    if (deckLinkDiscovery)
+    {
+        deckLinkDiscovery->shutdown();
+        delete deckLinkDiscovery;
+    }
     delete ui;
 }
 
@@ -237,7 +251,17 @@ void SoftProjector::positionDisplayWindow()
     QList<QScreen*> screens = QApplication::screens();
     int screen_count = screens.count();
 
-    qDebug()<< "Screen Count: " << screen_count;
+    // Add DeckLink devices to the screen list (as virtual screens)
+    if (deckLinkDiscovery && deckLinkDiscovery->isInitialized())
+    {
+        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+        screen_count += deckLinkDevices.count();
+        qDebug() << "Screen Count (including DeckLink): " << screen_count << "(" << screens.count() << "regular +" << deckLinkDevices.count() << "DeckLink)";
+    }
+    else
+    {
+        qDebug()<< "Screen Count: " << screen_count;
+    }
 
     // Validate and correct display screen indices if they are out of bounds
     if(mySettings.general.displayScreen < 0 || mySettings.general.displayScreen >= screen_count)
@@ -260,9 +284,25 @@ void SoftProjector::positionDisplayWindow()
     if(screen_count > 1)
     {
 
-        // if (desktop->isVirtualDesktop())
+        // Check if the selected display is a DeckLink device
+        if (mySettings.general.displayScreen >= screens.count() && !deckLinkDevices.isEmpty())
         {
-            // Move the display widget to screen 1 (secondary screen):
+            // This is a DeckLink device
+            int deckLinkIndex = mySettings.general.displayScreen - screens.count();
+            if (deckLinkIndex >= 0 && deckLinkIndex < deckLinkDevices.count())
+            {
+                pds1->setGeometry(deckLinkDevices.at(deckLinkIndex).geometry);
+                qDebug() << "Using DeckLink device:" << deckLinkDevices.at(deckLinkIndex).modelName;
+            }
+            else
+            {
+                // Invalid DeckLink index, fall back to first regular screen
+                pds1->setGeometry(screens.at(0)->geometry());
+            }
+        }
+        else
+        {
+            // Regular screen
             pds1->setGeometry(screens.at(mySettings.general.displayScreen)->geometry());
         }
 

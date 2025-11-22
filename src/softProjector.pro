@@ -88,7 +88,8 @@ SOURCES += sources/main.cpp \
     sources/projectordisplayscreen.cpp \
     sources/imagegenerator.cpp \
     sources/spimageprovider.cpp \
-    sources/mediacontrol.cpp
+    sources/mediacontrol.cpp \
+    sources/decklinkdiscovery.cpp
 HEADERS += headers/softprojector.hpp \
     headers/songwidget.hpp \
     headers/biblewidget.hpp \
@@ -131,7 +132,8 @@ HEADERS += headers/softprojector.hpp \
     headers/projectordisplayscreen.hpp \
     headers/imagegenerator.hpp \
     headers/spimageprovider.hpp \
-    headers/mediacontrol.hpp
+    headers/mediacontrol.hpp \
+    headers/decklinkdiscovery.hpp
 FORMS += ui/softprojector.ui \
     ui/songwidget.ui \
     ui/biblewidget.ui \
@@ -169,4 +171,13 @@ RESOURCES += softprojector.qrc
 
 win32 {
     RC_FILE = softprojector.rc
+    
+    # DeckLink SDK paths
+    # Note: DeckLink SDK uses COM interfaces, so we don't need to link against a library
+    # The DeckLink drivers must be installed for COM registration to work
+    # DECKLINK_SDK_PATH = $$PWD/../Blackmagic\ DeckLink\ SDK\ 15.2/Win
+    # INCLUDEPATH += $$DECKLINK_SDK_PATH/include
+    
+    # Link against COM libraries (ole32, oleaut32 for COM support)
+    LIBS += -lole32 -loleaut32
 }

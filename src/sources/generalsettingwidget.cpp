@@ -19,16 +19,30 @@
 
 #include "../headers/generalsettingwidget.hpp"
 #include "ui_generalsettingwidget.h"
+#include "../headers/decklinkdiscovery.hpp"
 
 GeneralSettingWidget::GeneralSettingWidget(QWidget *parent) :
     QWidget(parent),
-    ui(new Ui::GeneralSettingWidget)
+    ui(new Ui::GeneralSettingWidget),
+    deckLinkDiscovery(nullptr)
 {
     ui->setupUi(this);
+    
+    // Initialize DeckLink device discovery
+    deckLinkDiscovery = new DeckLinkDiscovery(this);
+    if (deckLinkDiscovery->initialize())
+    {
+        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+    }
 }
 
 GeneralSettingWidget::~GeneralSettingWidget()
 {
+    if (deckLinkDiscovery)
+    {
+        deckLinkDiscovery->shutdown();
+        delete deckLinkDiscovery;
+    }
     delete ui;
 }
 
@@ -75,6 +89,21 @@ void GeneralSettingWidget::loadSettings()
     {
         monitors << QString("%1 - %2x%3").arg(i).arg(s->geometry().width()).arg(s->geometry().height());
         ++i;
+    }
+
+    // Add DeckLink devices to the list
+    if (deckLinkDiscovery && deckLinkDiscovery->isInitialized())
+    {
+        deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
+        for (const DeckLinkDeviceInfo &device : deckLinkDevices)
+        {
+            if (device.supportsPlayback)
+            {
+                monitors << QString("%1 - %2 (DeckLink)").arg(i).arg(device.modelName);
+                ++i;
+            }
+        }
+        screen_count += deckLinkDevices.count();
     }
 
     if(screen_count>1)
@@ -187,9 +216,63 @@ GeneralSettings GeneralSettingWidget::getSettings()
         mySettings.currentThemeId = 0;
 
     mySettings.displayScreen = ui->comboBoxDisplayScreen->currentIndex();
-    mySettings.displayScreen2 = monitors.indexOf(ui->comboBoxDisplayScreen_2->currentText());    
-    mySettings.displayScreen3 = monitors.indexOf(ui->comboBoxDisplayScreen_3->currentText());
-    mySettings.displayScreen4 = monitors.indexOf(ui->comboBoxDisplayScreen_4->currentText());
+    
+    // Handle DeckLink device indices
+    int regularScreenCount = QApplication::screens().count();
+    QString display2Text = ui->comboBoxDisplayScreen_2->currentText();
+    if (display2Text != tr("none") && display2Text != tr("None"))
+    {
+        int index2 = monitors.indexOf(display2Text);
+        if (index2 >= regularScreenCount && !deckLinkDevices.isEmpty())
+        {
+            // This is a DeckLink device - adjust index
+            mySettings.displayScreen2 = index2;
+        }
+        else
+        {
+            mySettings.displayScreen2 = index2;
+        }
+    }
+    else
+    {
+        mySettings.displayScreen2 = -1;
+    }
+    
+    QString display3Text = ui->comboBoxDisplayScreen_3->currentText();
+    if (display3Text != tr("none") && display3Text != tr("None"))
+    {
+        int index3 = monitors.indexOf(display3Text);
+        if (index3 >= regularScreenCount && !deckLinkDevices.isEmpty())
+        {
+            mySettings.displayScreen3 = index3;
+        }
+        else
+        {
+            mySettings.displayScreen3 = index3;
+        }
+    }
+    else
+    {
+        mySettings.displayScreen3 = -1;
+    }
+    
+    QString display4Text = ui->comboBoxDisplayScreen_4->currentText();
+    if (display4Text != tr("none") && display4Text != tr("None"))
+    {
+        int index4 = monitors.indexOf(display4Text);
+        if (index4 >= regularScreenCount && !deckLinkDevices.isEmpty())
+        {
+            mySettings.displayScreen4 = index4;
+        }
+        else
+        {
+            mySettings.displayScreen4 = index4;
+        }
+    }
+    else
+    {
+        mySettings.displayScreen4 = -1;
+    }
 
     mySettings.displayControls.buttonSize = ui->comboBoxIconSize->currentIndex();
     mySettings.displayControls.alignmentV = ui->comboBoxControlsAlignV->currentIndex();

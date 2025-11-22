@@ -40,6 +40,7 @@
 #include "videoinfo.hpp"
 #include "slideshoweditor.hpp"
 #include "schedule.hpp"
+#include "decklinkdiscovery.hpp"
 
 class QActionGroup;
 
@@ -138,6 +139,10 @@ private:
     // Schelude list
     QList<Schedule> schedule;
     QDir appDataDir;
+
+    // DeckLink device discovery
+    DeckLinkDiscovery *deckLinkDiscovery;
+    QList<DeckLinkDeviceInfo> deckLinkDevices;
 
 private slots:
     void showDisplayScreen(bool show);

@@ -24,6 +24,7 @@
 #include "settings.hpp"
 #include "addsongbookdialog.hpp"
 #include "theme.hpp"
+#include "decklinkdiscovery.hpp"
 
 namespace Ui {
 class GeneralSettingWidget;
@@ -44,6 +45,8 @@ private:
     QStringList monitors;
     QStringList themes;
     QList<int> themeIdList;
+    DeckLinkDiscovery *deckLinkDiscovery;
+    QList<DeckLinkDeviceInfo> deckLinkDevices;
 
 public slots:
     void setSettings(GeneralSettings settings);
