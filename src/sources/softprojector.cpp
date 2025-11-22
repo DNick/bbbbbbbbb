@@ -233,15 +233,37 @@ void SoftProjector::positionDisplayWindow()
         // pds4->setWindowFlags(Qt::WindowStaysOnBottomHint); // Do not show always on top
     }
 
-    qDebug()<< "Screen Count: " << QApplication::primaryScreen()->virtualSiblings().count();
+    // Get available screens - this will refresh the list on each application startup
+    QList<QScreen*> screens = QApplication::screens();
+    int screen_count = screens.count();
 
-    if(QApplication::primaryScreen()->virtualSiblings().count() > 1)
+    qDebug()<< "Screen Count: " << screen_count;
+
+    // Validate and correct display screen indices if they are out of bounds
+    if(mySettings.general.displayScreen < 0 || mySettings.general.displayScreen >= screen_count)
+    {
+        mySettings.general.displayScreen = 0;
+    }
+    if(mySettings.general.displayScreen2 >= screen_count)
+    {
+        mySettings.general.displayScreen2 = -1;
+    }
+    if(mySettings.general.displayScreen3 >= screen_count)
+    {
+        mySettings.general.displayScreen3 = -1;
+    }
+    if(mySettings.general.displayScreen4 >= screen_count)
+    {
+        mySettings.general.displayScreen4 = -1;
+    }
+
+    if(screen_count > 1)
     {
 
         // if (desktop->isVirtualDesktop())
         {
             // Move the display widget to screen 1 (secondary screen):
-            pds1->setGeometry(QApplication::primaryScreen()->virtualSiblings().at(mySettings.general.displayScreen)->geometry());
+            pds1->setGeometry(screens.at(mySettings.general.displayScreen)->geometry());
         }
 
         pds1->setCursor(Qt::BlankCursor); //Sets a Blank Mouse to the screen
@@ -259,13 +281,13 @@ void SoftProjector::positionDisplayWindow()
         }
 
         // check if to display secondary display screen
-        if(mySettings.general.displayScreen2>=0)
+        if(mySettings.general.displayScreen2>=0 && mySettings.general.displayScreen2 < screen_count)
         {
             hasDisplayScreen2 = true;
             // if (desktop->isVirtualDesktop())
             {
                 // Move the display widget to screen 1 (secondary screen):
-                pds2->setGeometry(QApplication::primaryScreen()->virtualSiblings().at(mySettings.general.displayScreen2)->geometry());
+                pds2->setGeometry(screens.at(mySettings.general.displayScreen2)->geometry());
                 pds2->resetImGenSize();
 
             }
@@ -285,13 +307,13 @@ void SoftProjector::positionDisplayWindow()
         }
 
         // check if to display tertiary display screen
-        if(mySettings.general.displayScreen3>=0)
+        if(mySettings.general.displayScreen3>=0 && mySettings.general.displayScreen3 < screen_count)
         {
             hasDisplayScreen3 = true;
             // if (desktop->isVirtualDesktop())
             {
                 // Move the display widget to screen 1 (tertiary screen):
-                pds3->setGeometry(QApplication::primaryScreen()->virtualSiblings().at(mySettings.general.displayScreen3)->geometry());
+                pds3->setGeometry(screens.at(mySettings.general.displayScreen3)->geometry());
                 pds3->resetImGenSize();
 
             }
@@ -310,13 +332,13 @@ void SoftProjector::positionDisplayWindow()
         }
 
         // check if to display quaternary display screen
-        if(mySettings.general.displayScreen4>=0)
+        if(mySettings.general.displayScreen4>=0 && mySettings.general.displayScreen4 < screen_count)
         {
             hasDisplayScreen4 = true;
             // if (desktop->isVirtualDesktop())
             {
                 // Move the display widget to screen 1 (quaternary screen):
-                pds4->setGeometry(QApplication::primaryScreen()->virtualSiblings().at(mySettings.general.displayScreen4)->geometry());
+                pds4->setGeometry(screens.at(mySettings.general.displayScreen4)->geometry());
                 pds4->resetImGenSize();
 
             }
@@ -342,7 +364,7 @@ void SoftProjector::positionDisplayWindow()
         // Single monitor only: Do not show on strat up.
         // Will be shown only when items were sent to the projector.
         qDebug()<< "Setting Primary screen";
-        pds1->setGeometry(QApplication::primaryScreen()->virtualSiblings().at(0)->geometry());
+        pds1->setGeometry(screens.at(0)->geometry());
         pds1->resetImGenSize();
         showDisplayScreen(false);
         isSingleScreen = true;
