@@ -19,6 +19,7 @@
 
 #include "../headers/decklinkdiscovery.hpp"
 #include <QApplication>
+#include <QScreen>
 #include <QDebug>
 
 #ifdef Q_OS_WIN
@@ -26,6 +27,9 @@
 #include <objbase.h>
 #include <comutil.h>
 #include <shlwapi.h>
+
+// Attribute ID type (must be defined before use)
+typedef int64_t BMDDeckLinkAttributeID;
 
 // DeckLink COM interface GUIDs (from DeckLinkAPI.idl)
 // These are standard GUIDs from Blackmagic DeckLink SDK
@@ -59,9 +63,7 @@ struct IDeckLinkProfileAttributes : public IUnknown
     virtual HRESULT STDMETHODCALLTYPE GetFlag(BMDDeckLinkAttributeID cfgID, BOOL *value) = 0;
     virtual HRESULT STDMETHODCALLTYPE GetString(BMDDeckLinkAttributeID cfgID, BSTR *value) = 0;
 };
-
-// Attribute ID type (simplified)
-typedef int64_t BMDDeckLinkAttributeID;
+#endif
 
 DeckLinkDiscovery::DeckLinkDiscovery(QObject *parent)
     : QObject(parent)

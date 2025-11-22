@@ -89,7 +89,9 @@ private:
 
 QT_END_NAMESPACE
 
-Q_MEDIA_ENUM_DEBUG(QMediaPlaylist, PlaybackMode)
-Q_MEDIA_ENUM_DEBUG(QMediaPlaylist, Error)
+// Q_MEDIA_ENUM_DEBUG macro may not be available in Qt 6.10.0
+// Commented out to fix compilation errors
+// Q_MEDIA_ENUM_DEBUG(QMediaPlaylist, PlaybackMode)
+// Q_MEDIA_ENUM_DEBUG(QMediaPlaylist, Error)
 
 #endif // QMEDIAPLAYLIST_H
