@@ -112,25 +112,37 @@ void GeneralSettingWidget::loadSettings()
             deckLinkDevices = deckLinkDiscovery->getAvailableDevices();
             if (!deckLinkDevices.isEmpty())
             {
+                qDebug() << "Adding" << deckLinkDevices.count() << "DeckLink devices to display list";
+                // Add ALL DeckLink devices, not just those with playback support
+                // Some devices may support playback but not report it correctly
                 for (const DeckLinkDeviceInfo &device : deckLinkDevices)
                 {
-                    if (device.supportsPlayback)
+                    QString deviceLabel = QString("%1 - %2 (DeckLink)").arg(i).arg(device.modelName);
+                    if (!device.supportsPlayback)
                     {
-                        monitors << QString("%1 - %2 (DeckLink)").arg(i).arg(device.modelName);
-                        ++i;
+                        deviceLabel += " [No Playback]";
                     }
+                    monitors << deviceLabel;
+                    qDebug() << "  Added:" << deviceLabel;
+                    ++i;
                 }
                 screen_count += deckLinkDevices.count();
+            }
+            else
+            {
+                qDebug() << "DeckLink initialized but no devices found";
             }
         }
         else
         {
             deckLinkDevices.clear(); // Ensure it's empty if not initialized
+            qDebug() << "DeckLink not initialized or not available";
         }
     }
     catch (...)
     {
         // If any error occurs, just continue without DeckLink devices
+        qDebug() << "Error getting DeckLink devices, continuing without them";
         deckLinkDevices.clear();
     }
 
